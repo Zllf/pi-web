@@ -343,6 +343,70 @@ function builtin(name: string, factory: ExtensionFactory): InlineExtension {
   return { name, factory, replaceable: true, builtin: true };
 }
 
+export interface PiWebCodemodeExtension {
+  extension: InlineExtension;
+  available: boolean;
+  reason?: string;
+}
+
+export interface PiWebCodemodeExtensionOptions {
+  /** Keep the SDK's model/classifier API out of subagent scripts. */
+  models?: boolean;
+  /** Normal sessions let the SDK resolve `builtin:codemode`; subagents use a guarded inline wrapper. */
+  builtin?: boolean;
+  agentDir?: string;
+  cwd?: string;
+  projectTrusted?: boolean | (() => boolean);
+}
+
+/** Create Code mode for a session. Subagents use a plain inline wrapper because the SDK's
+ * `noExtensions` intentionally filters named built-ins along with third-party extensions. */
+export async function createPiWebCodemodeExtension(
+  options: PiWebCodemodeExtensionOptions = {},
+): Promise<PiWebCodemodeExtension> {
+  const readProjectTrusted = () => typeof options.projectTrusted === "function"
+    ? options.projectTrusted()
+    : options.projectTrusted ?? false;
+  let builtinEnabled = true;
+  if (options.builtin === false && options.agentDir !== undefined && options.cwd !== undefined
+    && typeof options.projectTrusted !== "function") {
+    const switches = await readBuiltinExtensionSwitches({
+      agentDir: options.agentDir,
+      cwd: options.cwd,
+      projectTrusted: readProjectTrusted(),
+    });
+    builtinEnabled = switches.codemode.enabled;
+  }
+  const sandbox = await checkCodemodeSandbox();
+  const sandboxFactory = sandbox.available
+    ? createCodemodeExtension({ models: options.models ?? true })
+    : unavailableExtension;
+  const guardedFactory: ExtensionFactory = async (pi) => {
+    if (options.builtin === false && options.agentDir !== undefined && options.cwd !== undefined) {
+      const switches = await readBuiltinExtensionSwitches({
+        agentDir: options.agentDir,
+        cwd: options.cwd,
+        projectTrusted: readProjectTrusted(),
+      });
+      if (!switches.codemode.enabled) return;
+    }
+    return sandboxFactory(pi);
+  };
+  const factory = sandbox.available && builtinEnabled ? guardedFactory : unavailableExtension;
+  const extension = options.builtin === false
+    ? { name: "codemode", factory, replaceable: true }
+    : builtin("codemode", factory);
+  return {
+    extension,
+    available: sandbox.available && builtinEnabled,
+    ...(!sandbox.available
+      ? { reason: sandbox.reason }
+      : !builtinEnabled
+        ? { reason: "builtin:codemode is disabled by settings" }
+        : {}),
+  };
+}
+
 export interface PiWebBuiltinExtensionsOptions {
   agentDir: string;
   /** Timing overrides for tests. */
@@ -360,17 +424,17 @@ export interface PiWebBuiltinExtensions {
 export async function createPiWebBuiltinExtensions(
   options: PiWebBuiltinExtensionsOptions,
 ): Promise<PiWebBuiltinExtensions> {
-  const [sandbox, mcp] = await Promise.all([checkCodemodeSandbox(), loadMcpRuntime()]);
+  const [codemode, mcp] = await Promise.all([createPiWebCodemodeExtension(), loadMcpRuntime()]);
   const mcpHost = mcp.available
     ? new McpHost({
         ...options.mcpHost,
         agentDir: options.agentDir,
         internals: mcp.internals,
-        codemodeAvailable: () => sandbox.available,
+        codemodeAvailable: () => codemode.available,
       })
     : undefined;
   const extensions = [
-    builtin("codemode", sandbox.available ? createCodemodeExtension() : unavailableExtension),
+    codemode.extension,
     builtin("tool-search", createToolSearchExtension()),
     builtin(
       "mcp",

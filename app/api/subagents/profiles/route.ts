@@ -52,6 +52,10 @@ export async function PUT(req: Request) {
     if (!body.profile || typeof body.profile.name !== "string") {
       return NextResponse.json({ error: "profile required" }, { status: 400 });
     }
+    const codemode = body.profile.codemode;
+    if (codemode !== undefined && codemode !== "on" && codemode !== "off" && codemode !== "inherit") {
+      return NextResponse.json({ error: "codemode must be on, off, or inherit" }, { status: 400 });
+    }
     return NextResponse.json({ profile: saveSubagentProfile(cwd, scope, body.profile) });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -81,15 +85,22 @@ export async function PATCH(req: Request) {
       description: source.description,
       systemPrompt: source.systemPrompt,
       tools: source.tools,
+      ...(source.extensionTools !== undefined ? { extensionTools: [...source.extensionTools] } : {}),
+      ...(source.disallowedExtensionTools !== undefined ? { disallowedExtensionTools: [...source.disallowedExtensionTools] } : {}),
       loadSkills: source.loadSkills,
       ...(source.skills !== undefined ? { skills: [...source.skills] } : {}),
       loadExtensions: source.loadExtensions,
+      ...(source.extensions !== undefined ? { extensions: [...source.extensions] } : {}),
+      codemode: source.codemode,
       promptMode: source.promptMode,
       model: source.model,
       thinking: source.thinking,
       maxTurns: source.maxTurns,
       inheritContext: source.inheritContext,
       runInBackground: source.runInBackground,
+      color: source.color,
+      isolation: source.isolation,
+      persistSession: source.persistSession,
       enabled: source.enabled,
     };
     return NextResponse.json({ profile: saveSubagentProfile(cwd, scope, { ...profile, enabled: body.enabled }) });
