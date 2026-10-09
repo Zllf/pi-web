@@ -204,7 +204,7 @@ test("profile PUT rejects invalid codemode without creating or overwriting files
       for (const codemode of invalidValues) {
         const response = await PUT(jsonRequest("PUT", { cwd, scope, profile: profile({ name, codemode }) }));
         assert.equal(response.status, 400, `${scope}: ${JSON.stringify(codemode)}`);
-        assert.deepEqual(await response.json(), { error: "codemode must be on, off, or inherit" });
+        assert.deepEqual(await response.json(), { error: "codemode must be one of: inherit, on, off" });
         if (existing) assert.equal(await readFile(file, "utf8"), original);
         else assert.equal(existsSync(file), false);
       }

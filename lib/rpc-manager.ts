@@ -46,7 +46,7 @@ import { isBuiltInSubagentsEnabled } from "./subagent-settings";
 import { resolveShellTools } from "./powershell-settings";
 import { CHAT_ONLY_RESOURCE_LOADER_OPTIONS, contextFilesSystemPrompt } from "./chat-only";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
-import { createPiWebBuiltinExtensions, createPiWebCodemodeExtension } from "./builtin-extensions";
+import { createPiWebBuiltinExtensions, createSubagentCodemodeExtension } from "./builtin-extensions";
 import type { McpHost } from "./mcp-host";
 import { mcpPromptPreparation, type McpCommandCandidate } from "./mcp-command";
 import { createReadOnlyMcpPolicyExtension } from "./mcp-read-only-policy";
@@ -2412,19 +2412,12 @@ export async function startRpcSession(
       ? undefined
       : await createPiWebBuiltinExtensions({ agentDir });
     const subagentCodemode = subagentResources?.codemode
-      ? await createPiWebCodemodeExtension({
-          models: false,
-          builtin: false,
+      ? await createSubagentCodemodeExtension({
           agentDir,
           cwd: sessionCwd,
           projectTrusted: () => settingsManager.isProjectTrusted(),
         })
       : undefined;
-    if (subagentCodemode && !subagentCodemode.available) {
-      throw new Error(subagentCodemode.reason
-        ? "Code mode is unavailable: " + subagentCodemode.reason
-        : "Code mode is unavailable");
-    }
     const skillsBinding = subagentResources ? createSubagentSkillsBinding({
       loadSkills: subagentResources.loadSkills,
       skills: subagentResources.skills,
@@ -2432,7 +2425,7 @@ export async function startRpcSession(
         ?? (chatOnly ? subagentResources.appendSystemPrompt[0] ?? "" : undefined),
     }) : undefined;
     const subagentExtensionFactories = [
-      ...(subagentCodemode ? [subagentCodemode.extension] : []),
+      ...(subagentCodemode ? [subagentCodemode] : []),
       ...(skillsBinding?.loaderOptions.extensionFactories ?? []),
     ];
     const services = await createAgentSessionServices({

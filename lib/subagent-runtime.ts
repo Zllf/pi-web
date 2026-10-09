@@ -36,7 +36,7 @@ import { buildSubagentPromptPlan } from "./subagent-prompt";
 import { createSubagentSkillsBinding } from "./subagent-skills";
 import { appendSubagentInputFiles, loadSubagentInputFiles } from "./subagent-input";
 import { projectTrustReloadOptions } from "./project-trust";
-import { createPiWebCodemodeExtension } from "./builtin-extensions";
+import { createSubagentCodemodeExtension } from "./builtin-extensions";
 import { resolveShellTools } from "./powershell-settings";
 import { isBuiltInSubagentsEnabled, readSubagentSettings } from "./subagent-settings";
 import { SubagentQueue } from "./subagent-queue";
@@ -270,21 +270,14 @@ export function createSubagentController(
         exactSystemPrompt: promptPlan.exactSystemPrompt,
       });
       const codemodeExtension = codemodeEnabled
-        ? await createPiWebCodemodeExtension({
-            models: false,
-            builtin: false,
+        ? await createSubagentCodemodeExtension({
             agentDir,
             cwd: childCwd,
             projectTrusted: () => settingsManager.isProjectTrusted(),
           })
         : undefined;
-      if (codemodeEnabled && !codemodeExtension?.available) {
-        throw new Error(codemodeExtension?.reason
-          ? "Code mode is unavailable: " + codemodeExtension.reason
-          : "Code mode is unavailable");
-      }
       const extensionFactories = [
-        ...(codemodeExtension ? [codemodeExtension.extension] : []),
+        ...(codemodeExtension ? [codemodeExtension] : []),
         ...(skillsBinding.loaderOptions.extensionFactories ?? []),
       ];
       if (!chatOnly) initTheme();

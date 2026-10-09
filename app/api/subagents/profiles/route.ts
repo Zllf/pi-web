@@ -52,10 +52,6 @@ export async function PUT(req: Request) {
     if (!body.profile || typeof body.profile.name !== "string") {
       return NextResponse.json({ error: "profile required" }, { status: 400 });
     }
-    const codemode = body.profile.codemode;
-    if (codemode !== undefined && codemode !== "on" && codemode !== "off" && codemode !== "inherit") {
-      return NextResponse.json({ error: "codemode must be on, off, or inherit" }, { status: 400 });
-    }
     return NextResponse.json({ profile: saveSubagentProfile(cwd, scope, body.profile) });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
