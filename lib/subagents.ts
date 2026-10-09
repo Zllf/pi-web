@@ -690,6 +690,8 @@ export function withSubagentExtensionTools(
 
 /** Every tool the SDK builds in (its `allToolNames`, which the package does not export). */
 const SDK_BUILTIN_TOOLS = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
+/** MCP tools by the SDK's `isMcpToolName()`: `mcp__*` and its three resource tools. */
+const MCP_TOOL_PATTERNS = ["mcp__*", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"];
 
 /**
  * The SDK tool options of a child, shared by spawn and reopen. A `tools` allowlist is fixed when
@@ -701,12 +703,25 @@ const SDK_BUILTIN_TOOLS = ["read", "bash", "powershell", "edit", "write", "grep"
  */
 export function subagentToolOptions(resources: { tools: readonly string[]; allExtensionTools?: boolean }) {
   const excludeTools: string[] = [...SUBAGENT_CONTROL_TOOL_NAMES];
-  if (!resources.allExtensionTools) return { tools: [...resources.tools], excludeTools };
+  if (!resources.allExtensionTools) {
+    // An allowlist that names no MCP tool keeps every MCP tool registered for codemode scripts
+    // and tool_search, as pi's `--tools` does, so a script could reach one an extension the
+    // profile did not select registers. A child's allowlist is its whole scope: exclude them.
+    const namesMcp = resources.tools.some((name) => name.startsWith("mcp__"));
+    return {
+      tools: [...resources.tools],
+      excludeTools: namesMcp
+        ? excludeTools
+        : [...excludeTools, ...MCP_TOOL_PATTERNS.filter((name) => !resources.tools.includes(name))],
+    };
+  }
   const builtins = resources.tools.filter((name) => SDK_BUILTIN_TOOLS.includes(name));
+  // Code mode registers inactive (`defaultActive: false`), so a child that has it names it too.
+  const added = resources.tools.includes("codemode") ? [...builtins, "codemode"] : builtins;
   return {
     noTools: "builtin" as const,
     // Only `+name` entries: they add to the default selection instead of forming an allowlist.
-    ...(builtins.length > 0 ? { tools: builtins.map((name) => `+${name}`) } : {}),
+    ...(added.length > 0 ? { tools: added.map((name) => `+${name}`) } : {}),
     excludeTools: [...excludeTools, ...SDK_BUILTIN_TOOLS.filter((name) => !builtins.includes(name))],
   };
 }
