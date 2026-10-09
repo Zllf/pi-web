@@ -9,8 +9,10 @@ const jiti = createJiti(import.meta.url, {
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const {
+  CompactionSummaryDetails,
   MessageView,
   ThinkingBlock,
+  formatToolDuration,
   getModelDisplayName,
   getTokenEstimateText,
   getToolCallInputText,
@@ -225,6 +227,23 @@ test("renders subagents as standard tool calls with only an extra session button
     onOpenSession() {},
   });
   assert.doesNotMatch(ordinaryHtml, /Open sub-agent session/);
+});
+
+test("a tool card shows the run time pi recorded, else the timestamps' difference, never a tiny one", () => {
+  const block = { type: "toolCall", toolCallId: "call-duration-1", toolName: "bash", arguments: { command: "make" } };
+  const message = { role: "assistant", provider: "anthropic", model: "claude-test", content: [block], timestamp: 1_000_000, durationMs: 4_000 };
+  const header = (result) => renderMessage(message, { toolResults: new Map([[block.toolCallId, result]]) });
+  const result = { role: "toolResult", toolCallId: block.toolCallId, toolName: "bash", content: [], isError: false };
+  // pi 1.1 records the execution itself; the timestamps would count the model's 4 s of generation too.
+  assert.match(header({ ...result, timestamp: 1_006_400, durationMs: 2_400 }), />2\.4s</);
+  // A result saved before pi recorded durations falls back to the timestamps.
+  assert.match(header({ ...result, timestamp: 1_006_400 }), />6\.4s</);
+  assert.doesNotMatch(header({ ...result, timestamp: 1_006_400, durationMs: 40 }), />\d+\.\ds</);
+
+  assert.equal(formatToolDuration(400), "0.4s");
+  assert.equal(formatToolDuration(59_940), "59.9s");
+  assert.equal(formatToolDuration(185_000), "3m 5s");
+  assert.equal(formatToolDuration(3_725_000), "1h 2m 5s");
 });
 
 const COMPLETE_SKILL_EXPANSION = `<skill name="review" location="/skills/review/SKILL.md">
@@ -672,4 +691,34 @@ test("keeps the registered name where no result names the server and tool", (t) 
     details: { calls: [{ id: "call-codemode-mcp/1", name: "mcp__docs_v2__search_pages", args: "{}", status: "ok" }] },
   });
   assert.match(textOf(html), /mcp__docs_v2__search_pages\{\}/);
+});
+
+test("collapses the compaction summary to its title and token count, as pi's TUI does (#1026)", () => {
+  const summary = "## Goal\n\nShip the parser fix.\n\n<read-files>\nlib/read.ts\n</read-files>\n\n<modified-files>\nlib/changed.ts\n</modified-files>";
+  const message = {
+    role: "custom",
+    customType: "compaction",
+    content: summary,
+    display: true,
+    details: { tokensBefore: 123456, firstKeptEntryId: "kept0001" },
+  };
+  const html = renderMessage(message);
+
+  assert.match(html, /<button type="button" aria-expanded="false" title="Expand"/);
+  assert.match(html, /Conversation compacted/);
+  assert.ok(html.includes(`Compacted from ${(123456).toLocaleString()} tokens`));
+  assert.doesNotMatch(html, /Ship the parser fix|following summary|File context|lib\/read\.ts|lib\/changed\.ts/);
+  assert.doesNotMatch(renderMessage({ ...message, details: undefined }), /Compacted from/);
+
+  // What the toggle reveals.
+  const details = renderToStaticMarkup(React.createElement(
+    I18nProvider,
+    null,
+    React.createElement(CompactionSummaryDetails, { summary }),
+  ));
+  assert.match(details, /following summary/);
+  assert.match(details, /Ship the parser fix/);
+  assert.match(details, /File context: 1 read, 1 modified/);
+  assert.match(details, /lib\/read\.ts/);
+  assert.match(details, /lib\/changed\.ts/);
 });

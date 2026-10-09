@@ -20,12 +20,12 @@ import {
 import {
   readSubagentRun,
   resolveSubagentProfile,
-  SUBAGENT_CONTROL_TOOL_NAMES,
   SUBAGENT_META_TYPE,
   SUBAGENT_STATUS_TYPE,
   SUBAGENT_RESULT_TYPE,
   selectSubagentExtensionTools,
   subagentExtensionLoaderOptions,
+  subagentToolOptions,
   withSubagentExtensionTools,
   type SubagentMetadata,
   type SubagentResultMetadata,
@@ -317,12 +317,16 @@ export function createSubagentController(
         throw new Error("Code mode is unavailable: builtin:codemode was not registered");
       }
 
+      // `ext:` selectors that `disallowed_tools` cancels out leave an empty list, which admits none.
+      const allExtensionTools = profile.loadExtensions && profile.extensionTools === undefined;
       const extensionToolNames = profile.loadExtensions
-        ? selectSubagentExtensionTools(
-          services.resourceLoader.getExtensions().extensions,
-          profile.extensionTools ?? ["ext:*"],
-          profile.disallowedExtensionTools,
-        )
+        ? profile.extensionTools !== undefined
+          ? selectSubagentExtensionTools(
+            services.resourceLoader.getExtensions().extensions,
+            profile.extensionTools,
+            profile.disallowedExtensionTools,
+          )
+          : services.resourceLoader.getExtensions().extensions.flatMap((extension) => [...extension.tools.keys()])
         : [];
       const activeTools = resolveShellTools(
         withSubagentExtensionTools(profile.tools, extensionToolNames),
@@ -352,6 +356,7 @@ export function createSubagentController(
           loadSkills: profile.loadSkills,
           ...(profile.skills !== undefined ? { skills: [...profile.skills] } : {}),
           loadExtensions: profile.loadExtensions,
+          ...(allExtensionTools ? { allExtensionTools: true } : {}),
           ...(profile.extensions !== undefined ? { extensions: [...profile.extensions] } : {}),
           ...(promptPlan.exactSystemPrompt !== undefined ? { exactSystemPrompt: promptPlan.exactSystemPrompt } : {}),
         },
@@ -367,8 +372,7 @@ export function createSubagentController(
         sessionManager,
         model: requestedModel ?? parentModel,
         ...(thinking ? { thinkingLevel: thinking as ThinkingLevel } : {}),
-        tools: activeTools,
-        excludeTools: [...SUBAGENT_CONTROL_TOOL_NAMES],
+        ...subagentToolOptions({ tools: activeTools, allExtensionTools }),
       });
       skillsBinding.setActiveToolsGetter(() => inner.getActiveToolNames());
       dependencies.registerSession(inner, {
